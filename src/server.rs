@@ -23,7 +23,7 @@ use crate::transport::Transport;
 /// Enables running `warp` using a runtime other than `tokio`.
 #[derive(Clone)]
 pub struct NtExec(
-    std::sync::Arc<dyn hyper::rt::Executor<std::pin::Pin<Box<dyn Future<Output = ()> + Send>>> + Send + Sync>
+    pub std::sync::Arc<dyn hyper::rt::Executor<std::pin::Pin<Box<dyn Future<Output = ()> + Send>>> + Send + Sync>
 );
 
 impl<F: Future<Output = ()> + Send + 'static> hyper::rt::Executor<F> for NtExec {
