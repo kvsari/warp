@@ -19,6 +19,8 @@ use crate::reject::IsReject;
 use crate::reply::Reply;
 use crate::transport::Transport;
 
+/// Wrap a custom executor handle for passing into `warp`.
+/// Enables running `warp` using a runtime other than `tokio`.
 #[derive(Clone)]
 pub struct NtExec(
     std::sync::Arc<dyn hyper::rt::Executor<std::pin::Pin<Box<dyn Future<Output = ()> + Send>>> + Send + Sync>

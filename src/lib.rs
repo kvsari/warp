@@ -162,7 +162,7 @@ pub use self::reject::{reject, Rejection};
 pub use self::reply::{reply, Reply};
 #[cfg(feature = "tls")]
 pub use self::server::TlsServer;
-pub use self::server::{serve, Server};
+pub use self::server::{serve, Server, NtExec};
 pub use self::service::service;
 #[doc(hidden)]
 pub use http;
