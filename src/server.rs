@@ -19,6 +19,23 @@ use crate::reject::IsReject;
 use crate::reply::Reply;
 use crate::transport::Transport;
 
+#[derive(Clone)]
+pub struct NtExec(
+    std::sync::Arc<dyn hyper::rt::Executor<std::pin::Pin<Box<dyn Future<Output = ()> + Send>>> + Send + Sync>
+);
+
+impl<F: Future<Output = ()> + Send + 'static> hyper::rt::Executor<F> for NtExec {
+    fn execute(&self, fut: F) {
+        self.0.execute(Box::pin(fut))
+    }
+}
+
+impl std::fmt::Debug for NtExec {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "NtExec (custom executor)")
+    }
+}
+
 /// Create a `Server` with the provided `Filter`.
 pub fn serve<F>(filter: F) -> Server<F>
 where
@@ -365,6 +382,40 @@ where
         ))
     }
 
+    /// Pass in a custom executor via a newtype. This overcomes the auto-trait problem.
+    pub fn serve_incoming_with_graceful_shutdown_and_newtype_executor<I>(
+        self,
+        incoming: I,
+        signal: impl Future<Output = ()> + Send + 'static,
+        exec: NtExec,
+    ) -> impl Future<Output = ()>
+    where
+        I: TryStream + Send,
+        I::Ok: AsyncRead + AsyncWrite + Send + 'static + Unpin,
+        I::Error: Into<Box<dyn StdError + Send + Sync>>,    
+    {
+        let incoming = incoming.map_ok(crate::transport::LiftIo);
+        let service = into_service!(self.filter);
+        let pipeline = self.pipeline;
+
+        async move {
+            let srv =
+                HyperServer::builder(hyper::server::accept::from_stream(incoming.into_stream()))
+                    .executor(exec)
+                    .http1_pipeline_flush(pipeline)
+                    .serve(service)
+                    .with_graceful_shutdown(signal)
+                    .await;
+
+            if let Err(err) = srv {
+                tracing::error!("server error: {}", err);
+            }
+        }
+        .instrument(tracing::info_span!(
+            "Server::serve_incoming_with_graceful_shutdown"
+        ))
+    }
+
     async fn serve_incoming2<I>(self, incoming: I)
     where
         I: TryStream + Send,
@@ -374,6 +425,26 @@ where
         let service = into_service!(self.filter);
 
         let srv = HyperServer::builder(hyper::server::accept::from_stream(incoming.into_stream()))
+            .http1_pipeline_flush(self.pipeline)
+            .serve(service)
+            .await;
+
+        if let Err(err) = srv {
+            tracing::error!("server error: {}", err);
+        }
+    }
+
+    /// Pass in a custom executor via a newtype. This overcomes the auto-trait problem.
+    pub async fn serve_incoming_with_newtype_executor<I>(self, incoming: I, exec: NtExec)
+    where
+        I: TryStream + Send,
+        I::Ok: Transport + Send + 'static + Unpin,
+        I::Error: Into<Box<dyn StdError + Send + Sync>>,       
+    {
+        let service = into_service!(self.filter);
+
+        let srv = HyperServer::builder(hyper::server::accept::from_stream(incoming.into_stream()))
+            .executor(exec)
             .http1_pipeline_flush(self.pipeline)
             .serve(service)
             .await;
